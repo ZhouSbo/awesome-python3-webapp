@@ -6,6 +6,7 @@ Default configuration
 """
 
 #session是什么？？
+#默认设置，这里hosts是打开数据库的地址
 configs = {
     "debug":True,
     'db':{
