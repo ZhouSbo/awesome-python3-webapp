@@ -29,7 +29,7 @@ def init_jinja2(app, **kw):
         block_end_string = kw.get("block_end_string", "%}"),
         variable_start_string = kw.get("variable_start_string", "{{"),
         variable_end_string = kw.get("variable_end_string", "}}"),    #变量起始字符串
-        auto_reload = kw.get("auto_reload", True)    #模板被修改后自动虫子啊
+        auto_reload = kw.get("auto_reload", True)    #模板被修改后自动重置
         ) 
     path = kw.get('path', None)    #从kw中获取路径，没有设置为None
     #如果路径为None
