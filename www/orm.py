@@ -86,7 +86,7 @@ def create_args_string(num):
 class Field(object):
     #创建了一个列的模板，包括列名，列的类型，是不是主键，default是什么？
     def __init__(self, name, column_type, primary_key, default):
-        self.name = name  #字段名，
+        self.name = name  #列
         self.column_type = column_type  #字段类型，就是这一列是int还是float
         self.primary_key = primary_key  #主键，必须唯一
         self.default = default  #默认值，什么的默认值？
@@ -123,60 +123,76 @@ class TextField(Field):
         super().__init__(name, 'text', False, default)
 
 class ModelMetaclass(type):
+    "每个表创建时（比如Users表）,将Users表中添加的各种属性（id name __table__等）分别放入__table__、__mappings__、"
+    "__primary_key_、__fields__属性中,其中__mappings__放置除__table__之外的key和value，fields放置除主键和__table__的__mappings__的key"
+    "随后使用这这些属性方便地构造四个数据库操作语句select update insert delete"
     # 元类类似于装饰器？ 初始化一个类时首先对这个类进行__new__处理
     # cls类似于self，不过在类中使用cls避免混淆
     # name是创建的类的名字
     # bases是准备继承的父类的名字，是元祖
-    # attrs是希望存在的属性的集合，字典模式
+    # attrs是希望每次创建类时都存在的属性，比如希望每个新建的类又有foo="bar"属性，attr就是{"foo":bar}
+    #在这里，attr中包含的是models中User类中__table__, email等属性
+    #  元类作用
+    #1)   拦截类的创建
+    #2)   修改类
+    #3)   返回修改之后的类
     def __new__(cls, name, bases, attrs):
-        #如果传入的是"Model"类，那么直接返回，不对Model类进行处理
+        #如果传入的是"Model"类，那么直接返回，不对Model类进行处理,因为Model类已经包含这些属性了
         if name == "Model":
             return type.__new__(cls, name, bases, attrs)
         # 看属性中是否存在__table__属性，没有就将参数中的name，也就是类名赋予给tableName(就是数据库的表名)
         tableName = attrs.get('__table__', None) or name
         # 日志记录 根据类名创建表名
         logger.info("found model: %s (table:%s)" % (name, tableName))
-        # 创建空字典mappings，以后用来储存类的属性
+        # 创建空字典mappings，用来储存attrs中的属性，但是不储存__table__
         mappings = dict()
-        # 储存除主键外的属性名
+        # 储存attrs中的key，就是email admin等值，但是不储存主键id和__table__
         fields = []
         # 主键默认为None，找到再进行赋值
         primaryKey = None
         # 依次迭代类的属性
-        # k是属性名，v是属性所对应的值
+        # k是key，v是value,这里key是id，email等，value是StringField(primary_key=True, default=next_id, ddl='varchar(50)')
         for k,v in attrs.items():
-            # Field是上面创建的每一列的模板
+            # Field是上面创建的每一列的模板,在attr中除了__table__,其余email列，name列都是属于Field类
+            #如果这个列是Field类
             if isinstance(v, Field):
                 logger.info("   found mapping: %s ==> %s" % (k,v))
-                #将找到的符合条件的属性赋值到mapping中
+                #将这个属性放在mapping中
                 mappings[k] = v
-                # 如果第一次找到主键
+                # 如果找到主键，这里v是一个类，取出这个类的属性
                 if v.primary_key:
                     #如果发现主键已经存在，报错
                     if primaryKey:
                         raise StandardError("Duplicate priary key for field: %s" % k)
-                    # 对主键赋值，k是属性名
+                    # 对主键赋值，k是列名，设置这个列为主键
                     primaryKey = k
-                # 否则将属性加到fields中
+                # 最后将除__table__和primary_key之外的所有属性放入fields中，fields是上面定义的[]
                 else:
                     fields.append(k)
+        #到这里，我们将设置了主键和表名，将除__table__之外的属性放在mappings中，并将mappings的key(不包括主键)放在fields中
+
         # 没有找到主键，报错
         if not primaryKey:
             raise StandardError("Primary key not found.")
-        # 依次从attrs中删除mapping中的属性，以便后面再次进行赋值，都是为了不影响attrs的其余属性
+        #本来attrs中有各种各样的属性，现在，将除表名之外的属性全部删除
         for k in mappings.keys():
             attrs.pop(k)
-        #对fields列表进行处理，对每一个字符串两边加上``
+
+        #到现在，我们从attrs中删除了除__table__之外的全部的属性，将其余的这些属性放到mappings中
+        #将mappings中的key放到field列表中(不包括主键)，
+        #对fields列表进行处理，对每一个字符串两边加上` `
         escaped_fields = list(map(lambda f: '`%s`' % f, fields))
-        attrs['__mappings__'] = mappings  #mapping是字典，放到attrs字典中
-        attrs['__table__'] = tableName  #设置表名
-        attrs["__primary_key__"] = primaryKey  #设置主键   
-        attrs["__fields__"] = fields   #其余的属性
+        #依次对attrs加入这几个属性
+        attrs['__mappings__'] = mappings  
+        attrs['__table__'] = tableName  
+        attrs["__primary_key__"] = primaryKey     
+        attrs["__fields__"] = fields   
         # 构造默认的SELECT INSERT UPDATE DELETE语句
         # 分别作为attrs的属性
-        # select %s, %s from tableName,下面的句子将一行中所有的属性全部取出来了
+        #数据库的变量加上` `
+        # select 主键, 除主键之外的所有属性 from tableName
         attrs["__select__"] = 'select `%s`, %s from `%s`' % (primaryKey, ', '.join(escaped_fields), tableName)
-        # insert into tableName(列的各个名字) values(列的各个值) create_args_string为"? ,? ,?"，作为占位符
+        # insert into tableName (各个属性如name, email等,主键) values (占位符)  +1 加的是主键的占位符
         attrs['__insert__'] = 'insert into `%s` (%s, `%s`) values (%s)' % (tableName, ', '.join(escaped_fields), primaryKey, create_args_string(len(escaped_fields) + 1))
         # update tebleName set cust_name='zsb',cust_email='zhousbo@gmail.com' where cust_id=1005
         # 因此这里第一个%s为表名，第二个应该是表达式，第三个是主键名
@@ -188,16 +204,19 @@ class Model(dict, metaclass=ModelMetaclass):
     # 创建Model类，首先对这个类进行元类处理
     def __init__(self, **kw):
         super(Model, self).__init__(**kw)
+
     # 使字典对象可以通过d.k的方式获取值
     def __getattr__(self, key):
         try:
             return self[key]
         except KeyError:
             raise AttributeError(r"'Model' object has no attribute '%s'" % key)
+    
     # 可以通过d.k=v的方式设置值
     def __setattr__(self, key, value):
         self[key] = value
-    #没有于key对应的属性值就返回None
+
+    #没有与key对应的属性值就返回None
     def getValue(self, key):
         return getattr(self, key, None)
 
@@ -207,7 +226,7 @@ class Model(dict, metaclass=ModelMetaclass):
         if value is None:
             # 实例中找不到就到__mappings__中去寻找
             field = self.__mappings__[key]
-            # 如果查询出来的字段default不是None
+            # 如果在__mappings__中找到了key
             if field.default is not None:
                 # 如果是方法就返回调用后的值，具体的值就直接返回
                 value = field.default() if callable(field.default) else field.default
@@ -256,15 +275,15 @@ class Model(dict, metaclass=ModelMetaclass):
         # 将所有的用空格连接起来
         # rs = 'select `%s`, %s from `%s` where cust_id=1005 order by price limit ?,?', [xxx,yyy,zzz,2,3]
         #select在上已经封装好了，从这里调用没有传入size函数
-        # rs是查询出来的结果
+        # rs是查询出来的结果，这里调用上面的select函数，返回的是列表，列表中的元素是字典
         rs = await select(' '.join(sql), args) 
-        # cls(**r)不懂是什么意思，好像是对取出的每一个结果做什么？？每一个结果都是一个字典？
+        # cls(**r)不懂是什么意思
         return [cls(**r) for r in rs]
 
     @classmethod
     async def findNumber(cls, selectField, where=None, args=None):
         '  find number by select and where'    #根据where条件查询结果数，查询的是数量
-        # selectField是选择的列名？_num_是什么？
+        # selectField是选择的列名，_num_就是类似于count(account_id) as num
         #这里sql语句没有从类中继承
         sql = ['select %s `_num_` from `%s`' % (selectField, cls.__table__)]
         if where:
@@ -273,7 +292,6 @@ class Model(dict, metaclass=ModelMetaclass):
         rs = await select(' '.join(sql), args, 1)
         if len(rs) == 0:
             return None
-        #返回的rs应该是一个字典，提取出里面_num_的值
         return rs[0]["_num_"]
 
     @classmethod
@@ -284,6 +302,7 @@ class Model(dict, metaclass=ModelMetaclass):
         # rs是查找的结果，为0 就是没找到返回None
         if len(rs) == 0:
             return None
+        #这里这个cls代表的应该是Model这个类自己，创建了一个新的类
         return cls(**rs[0])
 
     async def save(self):

@@ -58,7 +58,7 @@ async def test_remove(loop):
     await u.remove()
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(test_insert_blogs(loop))  
+loop.run_until_complete(test_insert(loop))  
 __pool = orm.__pool
 __pool.close()    #必须首先关闭连接迟才不会报错
 loop.run_until_complete(__pool.wait_closed())
