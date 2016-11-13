@@ -46,6 +46,12 @@ def init_jinja2(app, **kw):
                 env.filters[name] = f
         app["__templating__"] = env    #将env环境存入app的属性中
 
+#-----------------------------------------------------------------------------
+#下面三个函数都是中间件，当有请求到达，首先使用logger_factory记录日志，然后使用auth_factory判断是否是管理员
+#如果没有管理员权限却希望进行管理员操作，那么返回登录界面
+#response_factory专门负责构建相应，对不同响应进行不同处理（即添加不同header或对api的请求进行模板渲染）
+#因为只是对每个请求进行处理，所以采用的都是闭包的模式
+#
 #装饰器，每当有http请求就记录日志
 async def logger_factory(app, handler):
     async def logger_fact(request):
@@ -81,7 +87,6 @@ async def data_factory(app, handler):
         return (await handler(request))
     return parse_data
 
-#又是闭包？为什么要用闭包
 async def response_factory(app, handler):
     async def response(request):
         logger.info("Request handler...")
@@ -130,6 +135,8 @@ async def response_factory(app, handler):
         resp.content_type = "text/plain;charset=utf-8"
         return resp
     return response
+
+#-------------------------------------------------------------------
 
 #返回创建日志的时间
 def datetime_filter(t):

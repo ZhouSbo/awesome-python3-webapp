@@ -306,7 +306,7 @@ class Model(dict, metaclass=ModelMetaclass):
         return cls(**rs[0])
 
     async def save(self):
-        # self.fields是其余的属性，依次对其使用getValueOrDefault进行处理，然后变成列表
+        # self.fields是其余的属性，email name等，fields中全是key，args是value，就是zhoushaobo，zhousbo@gmail.com等
         args = list(map(self.getValueOrDefault, self.__fields__))
         # 将主键放到最后
         args.append(self.getValueOrDefault(self.__primary_key__))
