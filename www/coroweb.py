@@ -128,10 +128,6 @@ class RequestHandler(object):
 
     # 重载__call__之后，类就像函数一样可以调用
     async def __call__(self, request):
-        test1 = {arg: value for arg, value in request.__data__.items() if arg in required_args}
-        print(test1)
-        print(request.match_info)
-        print(request)
         #kw为什么不直接定义为一个空字典？是因为get中可能为空吗？
         kw = None
         #传入的request参数如果有关键字参数且没有默认值或者有命名关键字参数或者有关键字参数
